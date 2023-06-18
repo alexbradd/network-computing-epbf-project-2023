@@ -76,12 +76,12 @@ static __always_inline int parse_iphdr(void *data, void *data_end, __u16 *nh_off
 
     if (ip->version != 4)
         return -1;
-    if (data_end - data != bpf_ntoh(ip->tot_len))
+    if (data_end - data != bpf_ntohs(ip->tot_len))
         return -1;
     // Checksum is most likely calculated by the NIC, so skipping it
 
     *nh_off += hdr_size;
-    *iphdr = ip
+    *iphdr = ip;
 
     return ip->protocol;
 }
@@ -151,7 +151,7 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      * If it is, continue with the program.
      * If it is not, return XDP_DROP.
      */
-    if (et_type != bpf_htons(ETH_P_IP)) {
+    if (eth_type != bpf_htons(ETH_P_IP)) {
         bpf_printk("Non IPv4 packet detected, dropping");
         return XDP_DROP;
     }
@@ -159,7 +159,7 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
     /* TODO 3: Parse the IPv4 header.
      * If the packet is not a valid IPv4 packet, return XDP_DROP.
      */    
-    ip_type = parse_ethhdr(data + nf_off, data_end, &nf_off, &ip);
+    ip_type = parse_iphdr(data + nf_off, data_end, &nf_off, &ip);
     if (ip_type == -1) {
         bpf_printk("Packet is not a valid IPv4 packet");
         return XDP_DROP;
