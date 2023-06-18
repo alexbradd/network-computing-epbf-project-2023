@@ -28,6 +28,14 @@ const volatile struct {
 /* TODO 6: Define a C struct for the 5-tuple
  * (source IP, destination IP, source port, destination port, protocol).
  */
+struct packet_info {
+    // IP addresses and protocol are in network order, ports are in host order
+    __u32 source_ip; 
+    __u32 dest_ip;
+    __u16 source_port;
+    __u16 dest_port;
+    __u8  protocol;
+};
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -56,10 +64,26 @@ static __always_inline int parse_ethhdr(void *data, void *data_end, __u16 *nh_of
 static __always_inline int parse_iphdr(void *data, void *data_end, __u16 *nh_off,
                                        struct iphdr **iphdr) {
     /* TODO 4: Implement the parse_iphdr header function */
+    struct iphdr *ip = (struct iphdr *)data;
+    int hdr_size;
+    
+    // Very approximative sanity checking
+    if ((void*) ip + sizeof(struct iphdr) > data_end)
+        return -1;
+    hdr_size = ip->ihl * 4;
+    if(hdr_size < sizeof(*ip))
+        return -1;
 
-    /* Instead of returning 0, return the IP protocol value contained in the IPv4
-     * header */
-    return 0;
+    if (ip->version != 4)
+        return -1;
+    if (data_end - data != bpf_ntoh(ip->tot_len))
+        return -1;
+    // Checksum is most likely calculated by the NIC, so skipping it
+
+    *nh_off += hdr_size;
+    *iphdr = ip
+
+    return ip->protocol;
 }
 
 static __always_inline int parse_tcphdr(void *data, void *data_end, __u16 *nh_off,
@@ -95,16 +119,20 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
     __u16 src_mac_key;
     int action = XDP_PASS;
     __u32 ipv4_lookup_map_key;
-    // struct iphdr *ip;
-    // struct tcphdr *tcp;
-    // struct udphdr *udp;
 
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
+    void *data_cursor = data;
+    struct iphdr *ip;
+    int ip_type;
+    // struct tcphdr *tcp;
+    // struct udphdr *udp;
+
     bpf_printk("Packet received from interface (ifindex) %d", ctx->ingress_ifindex);
 
     eth_type = parse_ethhdr(data, data_end, &nf_off, &eth);
+    data_cursor = data + nf_off;
 
     if (data + sizeof(struct ethhdr) > data_end) {
         bpf_printk("Packet is not a valid Ethernet packet");
@@ -113,30 +141,50 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
 
     /* TODO 1: Check if the packet is ARP.
      * If it is, return XDP_PASS.
-     */
+     */   
+    if (eth_type == bpf_htons(ETH_P_ARP)) {
+        bpf_printk("ARP packet detected, passing");
+        return XDP_PASS;
+    }
 
     /* TODO 2: Check if the packet is IPv4.
      * If it is, continue with the program.
      * If it is not, return XDP_DROP.
      */
+    if (et_type != bpf_htons(ETH_P_IP)) {
+        bpf_printk("Non IPv4 packet detected, dropping");
+        return XDP_DROP;
+    }
 
     /* TODO 3: Parse the IPv4 header.
      * If the packet is not a valid IPv4 packet, return XDP_DROP.
-     */
+     */    
+    ip_type = parse_ethhdr(data + nf_off, data_end, &nf_off, &ip);
+    if (ip_type == -1) {
+        bpf_printk("Packet is not a valid IPv4 packet");
+        return XDP_DROP;
+    }
 
     /* TODO 5: Define a C struct for the 5-tuple
      * (source IP, destination IP, source port, destination port, protocol).
      * Fill the struct with the values from the packet.
      */
+    struct packet_info info;
+    info.source_ip = ip->addrs.saddr;
+    info.dest_ip   = ip->addrs.daddr;
+    info.protocol  = ip_type;
 
     /* TODO 7: Check if the packet is TCP or UDP
      * If it is, fill the 5-tuple struct with the values from the packet.
      * If it is not, goto forward.
      */
-
-    /* TODO 8: If the packet is TCP, parse the TCP header */
-
-    /* TODO 11: If the packet is UDP, parse the UDP header */
+    if (ip_type == bpf_htons(IPPROTO_TCP)) {
+        /* TODO 8: If the packet is TCP, parse the TCP header */
+    } else if (ip_type == bpf_htons(IPPROTO_UDP)) {
+        /* TODO 11: If the packet is UDP, parse the UDP header */
+    } else {
+        goto forward;
+    }
 
     /* TODO 13: Let's apply the heavy hitter detection algorithm
      * You can use two different hash functions for this.
@@ -160,6 +208,7 @@ forward:
      * address of the packet The value should be in network byte order. E.g.,
      * ipv4_lookup_map_key = flow.daddr;
      */
+    ipv4_lookup_map_key = ip->addrs.daddr;
 
     /* From here on, you don't need to modify anything
      * The following code will check if the destination IP is in the hash map.
