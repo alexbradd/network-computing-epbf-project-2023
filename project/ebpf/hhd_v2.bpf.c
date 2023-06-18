@@ -178,9 +178,9 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      * If it is, fill the 5-tuple struct with the values from the packet.
      * If it is not, goto forward.
      */
-    if (ip_type == bpf_htons(IPPROTO_TCP)) {
+    if (ip_type == IPPROTO_TCP) {
         /* TODO 8: If the packet is TCP, parse the TCP header */
-    } else if (ip_type == bpf_htons(IPPROTO_UDP)) {
+    } else if (ip_type == IPPROTO_UDP) {
         /* TODO 11: If the packet is UDP, parse the UDP header */
     } else {
         goto forward;
