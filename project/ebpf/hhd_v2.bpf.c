@@ -87,6 +87,8 @@ static __always_inline int parse_iphdr(void *data, void *data_end, __u16 *nh_off
 static __always_inline int parse_tcphdr(void *data, void *data_end, __u16 *nh_off,
                                         struct tcphdr **tcphdr) {
     /* TODO 9: Implement the parse_tcphdr header function */
+    struct tcphdr *tcp = (struct tcphdr *)data;
+    int hdr_size;
 
     /* TODO 10: Make sure you check the actual size of the TCP header
      * The TCP header size is stored in the doff field, which is a 4-bit field
@@ -94,17 +96,35 @@ static __always_inline int parse_tcphdr(void *data, void *data_end, __u16 *nh_of
      * The minimum size of the TCP header is 5 words (20 bytes) and the maximum
      * is 15 words (60 bytes).
      */
+    if ((void*)tcp + sizeof(struct tcphdr) > data_end)
+        return -1;
+    hdr_size = bpf_ntohs(tcp->doff) * 4;
+    if (hdr_size < sizeof(struct tcphdr) || hdr_size > 60)
+        return -1;
+
+    *nh_off += hdr_size;
+    *tcphdr = tcp;
 
     /* Instead of returning 0, return the actual size of the TCP header */
-    return 0;
+    return hdr_size;
 }
 
 static __always_inline int parse_udphdr(void *data, void *data_end, __u16 *nh_off,
                                         struct udphdr **udphdr) {
     /* TODO 12: Implement the parse_udphdr header function */
+    struct udphdr *udp = (struct udphdr *)data;
+    int hdr_size = sizeof(struct udphdr);
+
+    if ((void *)udp + hdr_size > data_end)
+        return -1;
+    if (bpf_ntohs(udp->len) < hdr_size) // || data_end - data != bpf_ntohs(udp->len))
+        return -1;
+
+    *nh_off += hdr_size;
+    *udphdr = udp;
 
     /* Instead of returning 0, return the actual size of the UDP header */
-    return 0;
+    return hdr_size;
 }
 
 SEC("xdp")
@@ -122,9 +142,9 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
     void *data = (void *)(long)ctx->data;
 
     struct iphdr *ip;
-    int ip_type;
-    // struct tcphdr *tcp;
-    // struct udphdr *udp;
+    struct tcphdr *tcp;
+    struct udphdr *udp;
+    int ip_type, transport_hdr_size;
 
     bpf_printk("Packet received from interface (ifindex) %d", ctx->ingress_ifindex);
 
@@ -177,8 +197,24 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      */
     if (ip_type == IPPROTO_TCP) {
         /* TODO 8: If the packet is TCP, parse the TCP header */
+        bpf_printk("Parsing TCP packet...");
+        transport_hdr_size = parse_tcphdr(data + nf_off, data_end, &nf_off, &tcp);
+        if (transport_hdr_size < 0) {
+            bpf_printk("Packet is not a valid TCP packet, dropping");
+            return XDP_DROP;
+        }
+        info.source_port = bpf_ntohs(tcp->source);
+        info.dest_port = bpf_ntohs(tcp->dest);
     } else if (ip_type == IPPROTO_UDP) {
         /* TODO 11: If the packet is UDP, parse the UDP header */
+        bpf_printk("Parsing UDP packet...");
+        transport_hdr_size = parse_udphdr(data + nf_off, data_end, &nf_off, &udp);
+        if (transport_hdr_size < 0) {
+            bpf_printk("Packet is not a valid UDP packet, dropping");
+            return XDP_DROP;
+        }
+        info.source_port = bpf_ntohs(udp->source);
+        info.dest_port = bpf_ntohs(udp->dest);
     } else {
         goto forward;
     }
