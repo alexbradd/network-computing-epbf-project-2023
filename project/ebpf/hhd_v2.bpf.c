@@ -29,7 +29,7 @@ const volatile struct {
  * (source IP, destination IP, source port, destination port, protocol).
  */
 struct packet_info {
-    // IP addresses and protocol are in network order, ports are in host order
+    // Everything is saved in network order
     __u32 source_ip; 
     __u32 dest_ip;
     __u16 source_port;
@@ -207,8 +207,8 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
             bpf_printk("Packet is not a valid TCP packet, dropping");
             return XDP_DROP;
         }
-        info.source_port = bpf_ntohs(tcp->source);
-        info.dest_port = bpf_ntohs(tcp->dest);
+        info.source_port = tcp->source;
+        info.dest_port = tcp->dest;
     } else if (ip_type == IPPROTO_UDP) {
         /* TODO 11: If the packet is UDP, parse the UDP header */
         bpf_printk("Parsing UDP packet...");
@@ -217,17 +217,17 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
             bpf_printk("Packet is not a valid UDP packet, dropping");
             return XDP_DROP;
         }
-        info.source_port = bpf_ntohs(udp->source);
-        info.dest_port = bpf_ntohs(udp->dest);
+        info.source_port = udp->source;
+        info.dest_port = udp->dest;
     } else {
         bpf_printk("Not TCP/UDP packet (is %x), forwarding", ip_type);
         goto forward;
     }
     bpf_printk("Identified flow %pI4:%u -> %pI4:%u on %u, running HHD",
         info.source_ip,
-        info.source_port,
+        bpf_ntohs(info.source_port),
         info.dest_ip,
-        info.dest_port,
+        bpf_ntohs(info.dest_port),
         info.protocol);
 
     /* TODO 13: Let's apply the heavy hitter detection algorithm
