@@ -28,7 +28,7 @@ const volatile struct {
 /* TODO 6: Define a C struct for the 5-tuple
  * (source IP, destination IP, source port, destination port, protocol).
  */
-struct packet_info {
+struct flow_info {
     // Everything is saved in network order
     __u32 source_ip; 
     __u32 dest_ip;
@@ -190,7 +190,7 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      * (source IP, destination IP, source port, destination port, protocol).
      * Fill the struct with the values from the packet.
      */
-    struct packet_info info;
+    struct flow_info info;
     info.source_ip = ip->addrs.saddr;
     info.dest_ip   = ip->addrs.daddr;
     info.protocol  = ip_type;
@@ -239,8 +239,8 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      * The third parameter is the seed to use for the hash function.
      * You can use the define values FASTHASH_SEED and JHASH_SEED for the seed.
      */
-    __u32 h_fasthash = fasthash32(&info, sizeof(struct packet_info), FASTHASH_SEED) % BLOOM_FILTER_ENTRIES;
-    __u32 h_jhash = jhash(&info, sizeof(struct packet_info), JHASH_SEED) % BLOOM_FILTER_ENTRIES;
+    __u32 h_fasthash = fasthash32(&info, sizeof(struct flow_info), FASTHASH_SEED) % BLOOM_FILTER_ENTRIES;
+    __u32 h_jhash = jhash(&info, sizeof(struct flow_info), JHASH_SEED) % BLOOM_FILTER_ENTRIES;
     if (h_fasthash >= BLOOM_FILTER_ENTRIES || h_jhash >= BLOOM_FILTER_ENTRIES)
         return XDP_ABORTED;
 
@@ -272,7 +272,7 @@ forward:
      * address of the packet The value should be in network byte order. E.g.,
      * ipv4_lookup_map_key = flow.daddr;
      */
-    ipv4_lookup_map_key = ip->addrs.daddr;
+    ipv4_lookup_map_key = info.dest_ip;
 
     /* From here on, you don't need to modify anything
      * The following code will check if the destination IP is in the hash map.
