@@ -115,13 +115,12 @@ static __always_inline int parse_udphdr(void *data, void *data_end, __u16 *nh_of
 
     if ((void *)udp + hdr_size > data_end)
         return -1;
-    if (bpf_ntohs(udp->len) < hdr_size) // || data_end - data != bpf_ntohs(udp->len))
+    if (bpf_ntohs(udp->len) < hdr_size)
         return -1;
 
     *nh_off += hdr_size;
     *udphdr = udp;
 
-    /* Instead of returning 0, return the actual size of the UDP header */
     return hdr_size;
 }
 
