@@ -67,15 +67,12 @@ static __always_inline int parse_iphdr(void *data, void *data_end, __u16 *nh_off
     struct iphdr *ip = (struct iphdr *)data;
     int hdr_size;
     
-    // Very approximative sanity checking
-    if ((void*) ip + sizeof(struct iphdr) > data_end)
+    if ((void*)ip + sizeof(struct iphdr) > data_end)
         return -1;
     hdr_size = ip->ihl * 4;
-    if(hdr_size < sizeof(struct iphdr))
+    if (hdr_size < sizeof(struct iphdr))
         return -1;
-    if (ip->version != 4)
-        return -1;
-    if (bpf_ntohs(ip->tot_len) < hdr_size) // || data_end - data != bpf_ntohs(ip->tot_len))
+    if ((void*)ip + hdr_size > data_end)
         return -1;
 
     *nh_off += hdr_size;
