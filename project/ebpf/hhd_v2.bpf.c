@@ -71,14 +71,12 @@ static __always_inline int parse_iphdr(void *data, void *data_end, __u16 *nh_off
     if ((void*) ip + sizeof(struct iphdr) > data_end)
         return -1;
     hdr_size = ip->ihl * 4;
-    if(hdr_size < sizeof(*ip))
+    if(hdr_size < sizeof(struct iphdr))
         return -1;
-
     if (ip->version != 4)
         return -1;
-    if (data_end - data != bpf_ntohs(ip->tot_len))
+    if (bpf_ntohs(ip->tot_len) < hdr_size) // || data_end - data != bpf_ntohs(ip->tot_len))
         return -1;
-    // Checksum is most likely calculated by the NIC, so skipping it
 
     *nh_off += hdr_size;
     *iphdr = ip;
@@ -123,7 +121,6 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
-    void *data_cursor = data;
     struct iphdr *ip;
     int ip_type;
     // struct tcphdr *tcp;
@@ -132,7 +129,6 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
     bpf_printk("Packet received from interface (ifindex) %d", ctx->ingress_ifindex);
 
     eth_type = parse_ethhdr(data, data_end, &nf_off, &eth);
-    data_cursor = data + nf_off;
 
     if (data + sizeof(struct ethhdr) > data_end) {
         bpf_printk("Packet is not a valid Ethernet packet");
@@ -159,9 +155,10 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
     /* TODO 3: Parse the IPv4 header.
      * If the packet is not a valid IPv4 packet, return XDP_DROP.
      */    
+    bpf_printk("Parsing IP packet...");
     ip_type = parse_iphdr(data + nf_off, data_end, &nf_off, &ip);
-    if (ip_type == -1) {
-        bpf_printk("Packet is not a valid IPv4 packet");
+    if (ip_type < 0) {
+        bpf_printk("Packet is not a valid IPv4 packet, dropping");
         return XDP_DROP;
     }
 
