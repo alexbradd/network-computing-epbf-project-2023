@@ -124,6 +124,13 @@ static __always_inline int parse_udphdr(void *data, void *data_end, __u16 *nh_of
     return hdr_size;
 }
 
+static __always_inline __u64* lookup_and_increment_counter(__u32 *hash) {
+    __u64* threshold = (__u64*)bpf_map_lookup_elem(&bloom_filter_map, hash);
+    if (threshold)
+        __sync_fetch_and_add(threshold, 1);
+    return threshold;
+}
+
 SEC("xdp")
 int xdp_hhd_v2(struct xdp_md *ctx) {
     __u16 nf_off = 0;
@@ -232,6 +239,18 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      * The third parameter is the seed to use for the hash function.
      * You can use the define values FASTHASH_SEED and JHASH_SEED for the seed.
      */
+    __u32 h_fasthash = fasthash32(&info, sizeof(struct packet_info), FASTHASH_SEED) % BLOOM_FILTER_ENTRIES;
+    __u32 h_jhash = jhash(&info, sizeof(struct packet_info), JHASH_SEED) % BLOOM_FILTER_ENTRIES;
+    if (h_fasthash >= BLOOM_FILTER_ENTRIES || h_jhash >= BLOOM_FILTER_ENTRIES)
+        return XDP_ABORTED;
+
+    __u64 *counter_fasthash = lookup_and_increment_counter(&h_fasthash);
+    if(counter_fasthash == NULL)
+        return XDP_ABORTED;
+
+    __u64 *counter_jhash = lookup_and_increment_counter(&h_jhash);
+    if(counter_jhash == NULL)
+        return XDP_ABORTED;
 
     /* TODO 14: Check if the values from the bloom filter are above the threshold
      * If they are, the packet is part of a DDoS attack, so drop it.
@@ -239,6 +258,14 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      * (goto forward). You can use the hhd_v2_cfg.threshold variable for the
      * threshold value.
      */
+    if (
+        *counter_fasthash > hhd_v2_cfg.threshold &&
+        *counter_jhash > hhd_v2_cfg.threshold
+    ) {
+        bpf_printk("Possible DoS found, dropping packet");
+        return XDP_DROP;
+    }
+    bpf_printk("Forwarding packet");
 
 forward:
     /* TODO 15: Copy inside the ipv4_lookup_map_key variable the destination IP
