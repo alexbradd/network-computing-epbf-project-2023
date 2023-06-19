@@ -165,7 +165,7 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
      * If it is not, return XDP_DROP.
      */
     if (eth_type != bpf_htons(ETH_P_IP)) {
-        bpf_printk("Non IPv4 packet detected, dropping");
+        bpf_printk("Non IPv4 (is %x) packet detected, dropping", bpf_ntohs(eth_type));
         return XDP_DROP;
     }
 
@@ -213,8 +213,15 @@ int xdp_hhd_v2(struct xdp_md *ctx) {
         info.source_port = bpf_ntohs(udp->source);
         info.dest_port = bpf_ntohs(udp->dest);
     } else {
+        bpf_printk("Not TCP/UDP packet (is %x), forwarding", ip_type);
         goto forward;
     }
+    bpf_printk("Identified flow %pI4:%u -> %pI4:%u on %u, running HHD",
+        info.source_ip,
+        info.source_port,
+        info.dest_ip,
+        info.dest_port,
+        info.protocol);
 
     /* TODO 13: Let's apply the heavy hitter detection algorithm
      * You can use two different hash functions for this.
