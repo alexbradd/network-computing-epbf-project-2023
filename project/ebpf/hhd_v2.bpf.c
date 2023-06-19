@@ -95,14 +95,15 @@ static __always_inline int parse_tcphdr(void *data, void *data_end, __u16 *nh_of
      */
     if ((void*)tcp + sizeof(struct tcphdr) > data_end)
         return -1;
-    hdr_size = bpf_ntohs(tcp->doff) * 4;
+    hdr_size = tcp->doff * 4;
     if (hdr_size < sizeof(struct tcphdr) || hdr_size > 60)
+        return -1;
+    if ((void*)tcp + hdr_size > data_end)
         return -1;
 
     *nh_off += hdr_size;
     *tcphdr = tcp;
 
-    /* Instead of returning 0, return the actual size of the TCP header */
     return hdr_size;
 }
 
